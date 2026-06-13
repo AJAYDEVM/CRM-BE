@@ -1,0 +1,517 @@
+// TMCI Operations Hub - Enterprise Database Schema
+// Workflow: Lead → Opportunity → Quotation → PreProject → Project → Expenses → Inventory → Invoice → Payment
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ───────────────────────────────────────────────────────────────────
+
+enum RoleName {
+  ADMIN
+  SALES
+  PROJECT_MANAGER
+  ENGINEER
+  FINANCE
+}
+
+enum CustomerStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum OpportunityStatus {
+  NEW
+  DISCUSSION
+  QUOTATION_SENT
+  NEGOTIATION
+  WON
+  LOST
+}
+
+enum QuotationStatus {
+  DRAFT
+  SENT
+  APPROVED
+  REJECTED
+}
+
+enum PreProjectStatus {
+  ACTIVE
+  CONVERTED
+  CANCELLED
+}
+
+enum ProjectStatus {
+  PLANNING
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+enum ExpenseCategory {
+  TRAVEL
+  HOTEL
+  FOOD
+  TRANSPORT
+  MATERIAL
+  OTHER
+}
+
+enum ExpenseReferenceType {
+  OPPORTUNITY
+  PRE_PROJECT
+  PROJECT
+  COMPANY
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum InventoryItemStatus {
+  AVAILABLE
+  ASSIGNED
+  MAINTENANCE
+}
+
+enum StockTransactionType {
+  IN
+  OUT
+  PROJECT_ASSIGNMENT
+  RETURN
+}
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  PAID
+  OVERDUE
+}
+
+enum PaymentStatus {
+  PENDING
+  PARTIAL
+  PAID
+  FAILED
+}
+
+enum FileReferenceType {
+  EXPENSE
+  PROJECT
+  QUOTATION
+  INVOICE
+  GENERAL
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  STATUS_CHANGE
+  CONVERT
+  APPROVE
+  REJECT
+}
+
+// ─── Auth & Users ────────────────────────────────────────────────────────────
+
+model User {
+  id           String    @id @default(uuid())
+  email        String    @unique
+  passwordHash String
+  firstName    String
+  lastName     String
+  role         RoleName  @default(ENGINEER)
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  refreshTokens   RefreshToken[]
+  managedProjects Project[]      @relation("ProjectManager")
+  projectMembers  ProjectMember[]
+  expenses        Expense[]      @relation("ExpenseEmployee")
+  approvedExpenses Expense[]     @relation("ExpenseApprover")
+  auditLogs       AuditLog[]
+  uploadedFiles   FileAsset[]
+
+  @@index([role])
+  @@index([isActive])
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model Permission {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  module      String
+  createdAt   DateTime @default(now())
+
+  rolePermissions RolePermission[]
+}
+
+model RolePermission {
+  role         RoleName
+  permissionId String
+
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([role, permissionId])
+  @@index([role])
+}
+
+// ─── CRM ─────────────────────────────────────────────────────────────────────
+
+model Customer {
+  id            String         @id @default(uuid())
+  companyName   String
+  contactPerson String
+  email         String
+  phone         String
+  address       String?
+  status        CustomerStatus @default(ACTIVE)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  opportunities Opportunity[]
+  quotations    Quotation[]
+  preProjects   PreProject[]
+  projects      Project[]
+  invoices      Invoice[]
+
+  @@index([companyName])
+  @@index([status])
+  @@index([email])
+}
+
+model Opportunity {
+  id                String            @id @default(uuid())
+  customerId        String
+  name              String
+  description       String?
+  estimatedAmount   Decimal           @db.Decimal(15, 2)
+  expectedCloseDate DateTime
+  status            OpportunityStatus @default(NEW)
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  customer    Customer     @relation(fields: [customerId], references: [id])
+  quotations  Quotation[]
+  preProjects PreProject[]
+  expenses    Expense[]
+
+  @@index([customerId])
+  @@index([status])
+  @@index([expectedCloseDate])
+}
+
+// ─── Quotations ──────────────────────────────────────────────────────────────
+
+model Quotation {
+  id              String          @id @default(uuid())
+  quotationNumber String          @unique
+  customerId      String
+  opportunityId   String?
+  subtotal        Decimal         @db.Decimal(15, 2) @default(0)
+  tax             Decimal         @db.Decimal(15, 2) @default(0)
+  discount        Decimal         @db.Decimal(15, 2) @default(0)
+  total           Decimal         @db.Decimal(15, 2) @default(0)
+  status          QuotationStatus @default(DRAFT)
+  validUntil      DateTime?
+  notes           String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  customer    Customer        @relation(fields: [customerId], references: [id])
+  opportunity Opportunity?    @relation(fields: [opportunityId], references: [id])
+  items       QuotationItem[]
+
+  @@index([customerId])
+  @@index([opportunityId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model QuotationItem {
+  id          String  @id @default(uuid())
+  quotationId String
+  name        String
+  description String?
+  quantity    Decimal @db.Decimal(10, 2)
+  unitPrice   Decimal @db.Decimal(15, 2)
+  taxRate     Decimal @db.Decimal(5, 2) @default(18)
+  lineTotal   Decimal @db.Decimal(15, 2)
+
+  quotation Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+
+  @@index([quotationId])
+}
+
+// ─── Pre Projects ────────────────────────────────────────────────────────────
+
+model PreProject {
+  id              String           @id @default(uuid())
+  opportunityId   String
+  customerId      String
+  name            String
+  status          PreProjectStatus @default(ACTIVE)
+  estimatedValue  Decimal          @db.Decimal(15, 2)
+  convertedAt     DateTime?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  opportunity Opportunity @relation(fields: [opportunityId], references: [id])
+  customer    Customer    @relation(fields: [customerId], references: [id])
+  project     Project?
+  expenses    Expense[]
+
+  @@index([opportunityId])
+  @@index([customerId])
+  @@index([status])
+}
+
+// ─── Projects ────────────────────────────────────────────────────────────────
+
+model Project {
+  id          String        @id @default(uuid())
+  name        String
+  customerId  String
+  preProjectId String?      @unique
+  managerId   String
+  startDate   DateTime
+  endDate     DateTime
+  budget      Decimal       @db.Decimal(15, 2)
+  spent       Decimal       @db.Decimal(15, 2) @default(0)
+  progress    Int           @default(0)
+  status      ProjectStatus @default(PLANNING)
+  description String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  customer   Customer        @relation(fields: [customerId], references: [id])
+  preProject PreProject?     @relation(fields: [preProjectId], references: [id])
+  manager    User            @relation("ProjectManager", fields: [managerId], references: [id])
+  members    ProjectMember[]
+  expenses   Expense[]
+  invoices   Invoice[]
+  stockTransactions StockTransaction[]
+
+  @@index([customerId])
+  @@index([managerId])
+  @@index([status])
+}
+
+model ProjectMember {
+  id        String   @id @default(uuid())
+  projectId String
+  userId    String
+  role      String   @default("MEMBER")
+  joinedAt  DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id])
+
+  @@unique([projectId, userId])
+  @@index([projectId])
+  @@index([userId])
+}
+
+// ─── Expenses ────────────────────────────────────────────────────────────────
+
+model Expense {
+  id             String               @id @default(uuid())
+  category       ExpenseCategory
+  amount         Decimal              @db.Decimal(15, 2)
+  description    String?
+  date           DateTime
+  employeeId     String
+  referenceType  ExpenseReferenceType
+  referenceId    String?
+  opportunityId  String?
+  preProjectId   String?
+  projectId      String?
+  attachmentUrl  String?
+  approvalStatus ApprovalStatus       @default(PENDING)
+  approvedById   String?
+  approvedAt     DateTime?
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+
+  employee    User         @relation("ExpenseEmployee", fields: [employeeId], references: [id])
+  approvedBy  User?        @relation("ExpenseApprover", fields: [approvedById], references: [id])
+  opportunity Opportunity? @relation(fields: [opportunityId], references: [id])
+  preProject  PreProject?  @relation(fields: [preProjectId], references: [id])
+  project     Project?     @relation(fields: [projectId], references: [id])
+
+  @@index([employeeId])
+  @@index([referenceType])
+  @@index([opportunityId])
+  @@index([preProjectId])
+  @@index([projectId])
+  @@index([approvalStatus])
+  @@index([date])
+}
+
+// ─── Inventory ───────────────────────────────────────────────────────────────
+
+model Product {
+  id          String   @id @default(uuid())
+  name        String
+  category    String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  inventoryItems InventoryItem[]
+
+  @@index([name])
+  @@index([category])
+}
+
+model InventoryItem {
+  id           String              @id @default(uuid())
+  productId    String
+  serialNumber String              @unique
+  quantity     Int                 @default(1)
+  location     String
+  status       InventoryItemStatus @default(AVAILABLE)
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+
+  product           Product            @relation(fields: [productId], references: [id])
+  stockTransactions StockTransaction[]
+
+  @@index([productId])
+  @@index([status])
+  @@index([location])
+}
+
+model StockTransaction {
+  id              String               @id @default(uuid())
+  inventoryItemId String
+  type            StockTransactionType
+  quantity        Int
+  projectId       String?
+  notes           String?
+  createdAt       DateTime             @default(now())
+
+  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id])
+  project       Project?      @relation(fields: [projectId], references: [id])
+
+  @@index([inventoryItemId])
+  @@index([projectId])
+  @@index([type])
+}
+
+// ─── Invoices & Payments ─────────────────────────────────────────────────────
+
+model Invoice {
+  id            String        @id @default(uuid())
+  invoiceNumber String        @unique
+  customerId    String
+  projectId     String
+  amount        Decimal       @db.Decimal(15, 2)
+  tax           Decimal       @db.Decimal(15, 2) @default(0)
+  total         Decimal       @db.Decimal(15, 2)
+  status        InvoiceStatus @default(DRAFT)
+  dueDate       DateTime
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  customer Customer      @relation(fields: [customerId], references: [id])
+  project  Project       @relation(fields: [projectId], references: [id])
+  items    InvoiceItem[]
+  payments Payment[]
+
+  @@index([customerId])
+  @@index([projectId])
+  @@index([status])
+  @@index([dueDate])
+}
+
+model InvoiceItem {
+  id          String  @id @default(uuid())
+  invoiceId   String
+  description String
+  quantity    Decimal @db.Decimal(10, 2)
+  unitPrice   Decimal @db.Decimal(15, 2)
+  amount      Decimal @db.Decimal(15, 2)
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+}
+
+model Payment {
+  id            String        @id @default(uuid())
+  invoiceId     String
+  amount        Decimal       @db.Decimal(15, 2)
+  paymentDate   DateTime
+  method        String
+  reference     String?
+  status        PaymentStatus @default(PAID)
+  createdAt     DateTime      @default(now())
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id])
+
+  @@index([invoiceId])
+  @@index([paymentDate])
+}
+
+// ─── Files & Audit ───────────────────────────────────────────────────────────
+
+model FileAsset {
+  id            String            @id @default(uuid())
+  fileName      String
+  originalName  String
+  mimeType      String
+  size          Int
+  s3Key         String            @unique
+  s3Bucket      String
+  referenceType FileReferenceType
+  referenceId   String?
+  uploadedById  String
+  createdAt     DateTime          @default(now())
+
+  uploadedBy User @relation(fields: [uploadedById], references: [id])
+
+  @@index([referenceType, referenceId])
+  @@index([uploadedById])
+}
+
+model AuditLog {
+  id         String      @id @default(uuid())
+  entityType String
+  entityId   String
+  action     AuditAction
+  userId     String
+  changes    Json?
+  metadata   Json?
+  createdAt  DateTime    @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([entityType, entityId])
+  @@index([userId])
+  @@index([createdAt])
+}
