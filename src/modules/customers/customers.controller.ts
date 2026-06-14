@@ -10,6 +10,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
+import { CustomerStatus } from '@prisma/client';
 import { CustomersService } from './customers.service';
 import { CreateCustomerDto, UpdateCustomerDto } from './dto/customer.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -32,8 +33,20 @@ export class CustomersController {
   @Get()
   @ApiQuery({ name: 'search', required: false })
   @ApiQuery({ name: 'status', required: false })
-  findAll(@Query('search') search?: string, @Query('status') status?: string) {
-    return this.customersService.findAll(search, status);
+  @ApiQuery({ name: 'page', required: false })
+  @ApiQuery({ name: 'limit', required: false })
+  findAll(
+    @Query('search') search?: string,
+    @Query('status') status?: CustomerStatus,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.customersService.findAll({
+      search,
+      status,
+      page: page ? Number(page) : undefined,
+      limit: limit ? Number(limit) : undefined,
+    });
   }
 
   @Get(':id')

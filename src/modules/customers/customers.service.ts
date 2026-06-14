@@ -1,8 +1,9 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../common/database/prisma.service';
 import { AuditService } from '../../common/services/audit.service';
+import { paginatedResult, parsePagination } from '../../common/utils/pagination';
 import { CreateCustomerDto, UpdateCustomerDto } from './dto/customer.dto';
-import { AuditAction } from '@prisma/client';
+import { AuditAction, CustomerStatus, ProjectStatus } from '@prisma/client';
 
 @Injectable()
 export class CustomersService {
@@ -23,21 +24,50 @@ export class CustomersService {
     return customer;
   }
 
-  findAll(search?: string, status?: string) {
-    return this.prisma.customer.findMany({
-      where: {
-        ...(status && { status: status as never }),
-        ...(search && {
-          OR: [
-            { companyName: { contains: search, mode: 'insensitive' } },
-            { contactPerson: { contains: search, mode: 'insensitive' } },
-            { email: { contains: search, mode: 'insensitive' } },
-          ],
-        }),
-      },
-      include: { _count: { select: { projects: { where: { status: 'ACTIVE' } } } } },
-      orderBy: { createdAt: 'desc' },
-    });
+  findAll(options: {
+    search?: string;
+    status?: CustomerStatus;
+    page?: number;
+    limit?: number;
+  }) {
+    const where: Record<string, unknown> = {};
+
+    if (options.status) {
+      where.status = options.status;
+    }
+
+    if (options.search?.trim()) {
+      const term = options.search.trim();
+      where.OR = [
+        { companyName: { contains: term, mode: 'insensitive' } },
+        { contactPerson: { contains: term, mode: 'insensitive' } },
+        { email: { contains: term, mode: 'insensitive' } },
+        { phone: { contains: term, mode: 'insensitive' } },
+      ];
+    }
+
+    const include = { _count: { select: { projects: { where: { status: ProjectStatus.ACTIVE } } } } };
+
+    if (options.page === undefined && options.limit === undefined) {
+      return this.prisma.customer.findMany({
+        where: where as never,
+        include,
+        orderBy: { createdAt: 'desc' },
+      });
+    }
+
+    const { page, limit, skip } = parsePagination(options.page, options.limit);
+
+    return Promise.all([
+      this.prisma.customer.count({ where: where as never }),
+      this.prisma.customer.findMany({
+        where: where as never,
+        include,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+    ]).then(([total, data]) => paginatedResult(data, total, page, limit));
   }
 
   async findOne(id: string) {

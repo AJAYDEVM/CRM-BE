@@ -137,13 +137,33 @@ model User {
   refreshTokens   RefreshToken[]
   managedProjects Project[]      @relation("ProjectManager")
   projectMembers  ProjectMember[]
-  expenses        Expense[]      @relation("ExpenseEmployee")
   approvedExpenses Expense[]     @relation("ExpenseApprover")
   auditLogs       AuditLog[]
   uploadedFiles   FileAsset[]
+  employee        Employee?
 
   @@index([role])
   @@index([isActive])
+}
+
+model Employee {
+  id          String   @id @default(uuid())
+  firstName   String
+  lastName    String
+  email       String?
+  phone       String?
+  department  String?
+  designation String?
+  isActive    Boolean  @default(true)
+  userId      String?  @unique
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user     User?     @relation(fields: [userId], references: [id])
+  expenses Expense[]
+
+  @@index([isActive])
+  @@index([lastName, firstName])
 }
 
 model RefreshToken {
@@ -357,7 +377,7 @@ model Expense {
   createdAt      DateTime             @default(now())
   updatedAt      DateTime             @updatedAt
 
-  employee    User         @relation("ExpenseEmployee", fields: [employeeId], references: [id])
+  employee    Employee     @relation(fields: [employeeId], references: [id])
   approvedBy  User?        @relation("ExpenseApprover", fields: [approvedById], references: [id])
   opportunity Opportunity? @relation(fields: [opportunityId], references: [id])
   preProject  PreProject?  @relation(fields: [preProjectId], references: [id])
@@ -476,6 +496,18 @@ model Payment {
 
   @@index([invoiceId])
   @@index([paymentDate])
+}
+
+// ─── Company Settings ────────────────────────────────────────────────────────
+
+model CompanyProfile {
+  id          String   @id @default("default")
+  companyName String
+  gstNumber   String?
+  email       String
+  phone       String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 
 // ─── Files & Audit ───────────────────────────────────────────────────────────

@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../common/database/prisma.service';
 import { AuditService } from '../../common/services/audit.service';
+import { paginatedResult, parsePagination } from '../../common/utils/pagination';
 import { CreateProjectDto, UpdateProjectDto, AssignMembersDto } from './dto/project.dto';
 import { AuditAction, ProjectStatus } from '@prisma/client';
 
@@ -24,16 +25,54 @@ export class ProjectsService {
     return project;
   }
 
-  findAll(status?: ProjectStatus) {
-    return this.prisma.project.findMany({
-      where: status ? { status } : undefined,
-      include: {
-        customer: { select: { id: true, companyName: true } },
-        manager: { select: { id: true, firstName: true, lastName: true } },
-        _count: { select: { members: true, expenses: true, invoices: true } },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+  findAll(options: {
+    status?: ProjectStatus;
+    search?: string;
+    page?: number;
+    limit?: number;
+  }) {
+    const where: Record<string, unknown> = {};
+
+    if (options.status) {
+      where.status = options.status;
+    }
+
+    if (options.search?.trim()) {
+      const term = options.search.trim();
+      where.OR = [
+        { name: { contains: term, mode: 'insensitive' } },
+        { customer: { companyName: { contains: term, mode: 'insensitive' } } },
+        { manager: { firstName: { contains: term, mode: 'insensitive' } } },
+        { manager: { lastName: { contains: term, mode: 'insensitive' } } },
+      ];
+    }
+
+    const include = {
+      customer: { select: { id: true, companyName: true } },
+      manager: { select: { id: true, firstName: true, lastName: true } },
+      _count: { select: { members: true, expenses: true, invoices: true } },
+    };
+
+    if (options.page === undefined && options.limit === undefined) {
+      return this.prisma.project.findMany({
+        where: where as never,
+        include,
+        orderBy: { createdAt: 'desc' },
+      });
+    }
+
+    const { page, limit, skip } = parsePagination(options.page, options.limit);
+
+    return Promise.all([
+      this.prisma.project.count({ where: where as never }),
+      this.prisma.project.findMany({
+        where: where as never,
+        include,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+    ]).then(([total, data]) => paginatedResult(data, total, page, limit));
   }
 
   async findOne(id: string) {
@@ -43,7 +82,11 @@ export class ProjectsService {
         customer: true,
         manager: { select: { id: true, firstName: true, lastName: true, email: true } },
         members: { include: { user: { select: { id: true, firstName: true, lastName: true, role: true } } } },
-        expenses: { take: 20, orderBy: { date: 'desc' } },
+        expenses: {
+          take: 20,
+          orderBy: { date: 'desc' },
+          include: { employee: { select: { firstName: true, lastName: true } } },
+        },
         invoices: true,
         preProject: true,
       },

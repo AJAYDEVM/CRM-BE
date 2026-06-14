@@ -40,7 +40,7 @@ export class PreProjectsController {
     @Body() dto: AddPreProjectExpenseDto,
     @CurrentUser() user: AuthUser,
   ) {
-    return this.service.addExpense(id, dto, user.sub, user.sub);
+    return this.service.addExpense(id, dto, user.sub, user.role);
   }
 
   @Post(':id/convert')

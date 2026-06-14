@@ -1,5 +1,5 @@
 import { IsDateString, IsEnum, IsNumber, IsOptional, IsString, IsUUID, Min } from 'class-validator';
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import { ExpenseCategory, ExpenseReferenceType } from '@prisma/client';
 import { Type } from 'class-transformer';
 
@@ -22,6 +22,11 @@ export class CreateExpenseDto {
   @ApiProperty()
   @IsDateString()
   date: string;
+
+  @ApiPropertyOptional({ description: 'Employee the expense is for; defaults to the logged-in user' })
+  @IsOptional()
+  @IsUUID()
+  employeeId?: string;
 
   @ApiProperty({ enum: ExpenseReferenceType })
   @IsEnum(ExpenseReferenceType)
@@ -47,6 +52,8 @@ export class CreateExpenseDto {
   @IsUUID()
   projectId?: string;
 }
+
+export class UpdateExpenseDto extends PartialType(CreateExpenseDto) {}
 
 export class ApproveExpenseDto {
   @ApiProperty({ enum: ['APPROVED', 'REJECTED'] })

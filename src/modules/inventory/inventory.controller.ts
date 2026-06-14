@@ -1,10 +1,11 @@
-import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { ApiBearerAuth, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { InventoryItemStatus } from '@prisma/client';
 import { InventoryService } from './inventory.service';
 import {
   CreateProductDto,
   CreateInventoryItemDto,
+  UpdateInventoryItemDto,
   StockTransactionDto,
 } from './dto/inventory.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -33,8 +34,30 @@ export class InventoryController {
   }
 
   @Get('items')
-  findItems(@Query('status') status?: InventoryItemStatus) {
-    return this.service.findAllItems(status);
+  @ApiQuery({ name: 'status', required: false })
+  @ApiQuery({ name: 'projectId', required: false })
+  @ApiQuery({ name: 'search', required: false })
+  @ApiQuery({ name: 'page', required: false })
+  @ApiQuery({ name: 'limit', required: false })
+  findItems(
+    @Query('status') status?: InventoryItemStatus,
+    @Query('projectId') projectId?: string,
+    @Query('search') search?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.service.findItems({
+      status,
+      projectId,
+      search,
+      page: page ? Number(page) : undefined,
+      limit: limit ? Number(limit) : undefined,
+    });
+  }
+
+  @Patch('items/:id')
+  updateItem(@Param('id') id: string, @Body() dto: UpdateInventoryItemDto) {
+    return this.service.updateItem(id, dto);
   }
 
   @Get('dashboard')

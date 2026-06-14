@@ -1,11 +1,22 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../common/database/prisma.service';
 import {
   CreateProductDto,
   CreateInventoryItemDto,
+  UpdateInventoryItemDto,
   StockTransactionDto,
 } from './dto/inventory.dto';
 import { InventoryItemStatus, StockTransactionType } from '@prisma/client';
+
+const itemInclude = {
+  product: true,
+  stockTransactions: {
+    where: { type: StockTransactionType.PROJECT_ASSIGNMENT },
+    orderBy: { createdAt: 'desc' as const },
+    take: 1,
+    include: { project: { select: { id: true, name: true } } },
+  },
+};
 
 @Injectable()
 export class InventoryService {
@@ -16,21 +27,105 @@ export class InventoryService {
   }
 
   findAllProducts() {
-    return this.prisma.product.findMany({ include: { _count: { select: { inventoryItems: true } } } });
-  }
-
-  createItem(dto: CreateInventoryItemDto) {
-    return this.prisma.inventoryItem.create({
-      data: dto,
-      include: { product: true },
+    return this.prisma.product.findMany({
+      include: { _count: { select: { inventoryItems: true } } },
+      orderBy: { name: 'asc' },
     });
   }
 
-  findAllItems(status?: InventoryItemStatus) {
-    return this.prisma.inventoryItem.findMany({
-      where: status ? { status } : undefined,
-      include: { product: true },
-      orderBy: { createdAt: 'desc' },
+  createItem(dto: CreateInventoryItemDto) {
+    if (dto.status === InventoryItemStatus.ASSIGNED) {
+      throw new BadRequestException('Create the item as Available, then assign it to a project');
+    }
+    return this.prisma.inventoryItem.create({
+      data: dto,
+      include: itemInclude,
+    });
+  }
+
+  private buildItemWhere(options: {
+    status?: InventoryItemStatus;
+    projectId?: string;
+    search?: string;
+  }) {
+    const where: Record<string, unknown> = {};
+
+    if (options.projectId) {
+      where.status = InventoryItemStatus.ASSIGNED;
+      where.stockTransactions = {
+        some: {
+          projectId: options.projectId,
+          type: StockTransactionType.PROJECT_ASSIGNMENT,
+        },
+      };
+    } else if (options.status) {
+      where.status = options.status;
+    }
+
+    if (options.search?.trim()) {
+      const term = options.search.trim();
+      where.OR = [
+        { serialNumber: { contains: term, mode: 'insensitive' } },
+        { location: { contains: term, mode: 'insensitive' } },
+        { product: { name: { contains: term, mode: 'insensitive' } } },
+        { product: { category: { contains: term, mode: 'insensitive' } } },
+        {
+          stockTransactions: {
+            some: {
+              type: StockTransactionType.PROJECT_ASSIGNMENT,
+              project: { name: { contains: term, mode: 'insensitive' } },
+            },
+          },
+        },
+      ];
+    }
+
+    return where;
+  }
+
+  async findItems(options: {
+    status?: InventoryItemStatus;
+    projectId?: string;
+    search?: string;
+    page?: number;
+    limit?: number;
+  }) {
+    const page = Math.max(1, options.page ?? 1);
+    const limit = Math.min(100, Math.max(1, options.limit ?? 10));
+    const where = this.buildItemWhere(options);
+
+    const [data, total] = await Promise.all([
+      this.prisma.inventoryItem.findMany({
+        where: where as never,
+        include: itemInclude,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.inventoryItem.count({ where: where as never }),
+    ]);
+
+    return {
+      data,
+      total,
+      page,
+      limit,
+      totalPages: Math.max(1, Math.ceil(total / limit)),
+    };
+  }
+
+  async updateItem(id: string, dto: UpdateInventoryItemDto) {
+    const item = await this.prisma.inventoryItem.findUnique({ where: { id } });
+    if (!item) throw new NotFoundException('Inventory item not found');
+
+    if (dto.status === InventoryItemStatus.ASSIGNED && item.status !== InventoryItemStatus.ASSIGNED) {
+      throw new BadRequestException('Use assign transaction to mark item as assigned');
+    }
+
+    return this.prisma.inventoryItem.update({
+      where: { id },
+      data: dto,
+      include: itemInclude,
     });
   }
 
@@ -45,6 +140,23 @@ export class InventoryService {
   async recordTransaction(dto: StockTransactionDto) {
     const item = await this.prisma.inventoryItem.findUnique({ where: { id: dto.inventoryItemId } });
     if (!item) throw new NotFoundException('Inventory item not found');
+
+    if (dto.type === StockTransactionType.PROJECT_ASSIGNMENT) {
+      if (item.status !== InventoryItemStatus.AVAILABLE) {
+        throw new BadRequestException('Only available items can be assigned to a project');
+      }
+      if (!dto.projectId) {
+        throw new BadRequestException('Project is required for assignment');
+      }
+      const project = await this.prisma.project.findUnique({ where: { id: dto.projectId } });
+      if (!project) throw new NotFoundException('Project not found');
+    }
+
+    if (dto.type === StockTransactionType.RETURN) {
+      if (item.status !== InventoryItemStatus.ASSIGNED) {
+        throw new BadRequestException('Only assigned items can be returned');
+      }
+    }
 
     const transaction = await this.prisma.$transaction(async (tx) => {
       const created = await tx.stockTransaction.create({ data: dto });

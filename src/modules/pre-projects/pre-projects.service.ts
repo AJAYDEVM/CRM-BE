@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../common/database/prisma.service';
 import { AuditService } from '../../common/services/audit.service';
+import { EmployeesService } from '../employees/employees.service';
 import {
   CreatePreProjectDto,
   AddPreProjectExpenseDto,
@@ -18,6 +19,7 @@ export class PreProjectsService {
   constructor(
     private prisma: PrismaService,
     private audit: AuditService,
+    private employees: EmployeesService,
   ) {}
 
   async create(dto: CreatePreProjectDto, userId: string) {
@@ -73,11 +75,13 @@ export class PreProjectsService {
     return pp;
   }
 
-  async addExpense(id: string, dto: AddPreProjectExpenseDto, employeeId: string, userId: string) {
+  async addExpense(id: string, dto: AddPreProjectExpenseDto, userId: string, userRole: string) {
     const preProject = await this.findOne(id);
     if (preProject.status !== PreProjectStatus.ACTIVE) {
       throw new BadRequestException('Cannot add expenses to inactive pre-project');
     }
+
+    const employeeId = await this.employees.resolveEmployeeId(dto.employeeId, userId, userRole);
 
     const expense = await this.prisma.expense.create({
       data: {

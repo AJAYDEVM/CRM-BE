@@ -28,6 +28,11 @@ export class AddPreProjectExpenseDto {
   @IsOptional()
   @IsString()
   description?: string;
+
+  @ApiPropertyOptional({ description: 'Employee the expense is for; defaults to logged-in user profile' })
+  @IsOptional()
+  @IsUUID()
+  employeeId?: string;
 }
 
 export class ConvertPreProjectDto {

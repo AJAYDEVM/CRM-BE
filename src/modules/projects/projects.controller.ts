@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { ProjectStatus } from '@prisma/client';
 import { ProjectsService } from './projects.service';
 import { CreateProjectDto, UpdateProjectDto, AssignMembersDto } from './dto/project.dto';
@@ -20,8 +20,22 @@ export class ProjectsController {
   }
 
   @Get()
-  findAll(@Query('status') status?: ProjectStatus) {
-    return this.service.findAll(status);
+  @ApiQuery({ name: 'status', required: false })
+  @ApiQuery({ name: 'search', required: false })
+  @ApiQuery({ name: 'page', required: false })
+  @ApiQuery({ name: 'limit', required: false })
+  findAll(
+    @Query('status') status?: ProjectStatus,
+    @Query('search') search?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.service.findAll({
+      status,
+      search,
+      page: page ? Number(page) : undefined,
+      limit: limit ? Number(limit) : undefined,
+    });
   }
 
   @Get(':id')

@@ -18,3 +18,15 @@ export class RefreshTokenDto {
   @IsNotEmpty()
   refreshToken: string;
 }
+
+export class ChangePasswordDto {
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  currentPassword: string;
+
+  @ApiProperty({ minLength: 6 })
+  @IsString()
+  @MinLength(6)
+  newPassword: string;
+}

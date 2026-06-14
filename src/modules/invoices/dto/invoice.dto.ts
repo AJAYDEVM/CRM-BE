@@ -9,6 +9,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { PartialType } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 
 export class InvoiceItemDto {
@@ -48,6 +49,8 @@ export class CreateInvoiceDto {
   @Type(() => InvoiceItemDto)
   items: InvoiceItemDto[];
 }
+
+export class UpdateInvoiceDto extends PartialType(CreateInvoiceDto) {}
 
 export class RecordPaymentDto {
   @ApiProperty()

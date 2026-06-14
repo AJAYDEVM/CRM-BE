@@ -42,6 +42,24 @@ export class CreateInventoryItemDto {
   status?: InventoryItemStatus;
 }
 
+export class UpdateInventoryItemDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  location?: string;
+
+  @ApiPropertyOptional({ enum: InventoryItemStatus })
+  @IsOptional()
+  @IsEnum(InventoryItemStatus)
+  status?: InventoryItemStatus;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  quantity?: number;
+}
+
 export class StockTransactionDto {
   @ApiProperty()
   @IsUUID()

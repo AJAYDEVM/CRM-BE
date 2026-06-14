@@ -9,10 +9,12 @@ import { QuotationsModule } from './modules/quotations/quotations.module';
 import { PreProjectsModule } from './modules/pre-projects/pre-projects.module';
 import { ProjectsModule } from './modules/projects/projects.module';
 import { ExpensesModule } from './modules/expenses/expenses.module';
+import { EmployeesModule } from './modules/employees/employees.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
 import { InvoicesModule } from './modules/invoices/invoices.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { FilesModule } from './modules/files/files.module';
+import { SettingsModule } from './modules/settings/settings.module';
 
 @Module({
   imports: [
@@ -26,10 +28,12 @@ import { FilesModule } from './modules/files/files.module';
     PreProjectsModule,
     ProjectsModule,
     ExpensesModule,
+    EmployeesModule,
     InventoryModule,
     InvoicesModule,
     ReportsModule,
     FilesModule,
+    SettingsModule,
   ],
 })
 export class AppModule {}

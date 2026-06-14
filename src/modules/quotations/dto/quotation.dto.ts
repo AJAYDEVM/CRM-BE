@@ -8,7 +8,7 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional, PartialType, OmitType } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 
 export class QuotationItemDto {
@@ -80,3 +80,7 @@ export class AddQuotationItemsDto {
   @Type(() => QuotationItemDto)
   items: QuotationItemDto[];
 }
+
+export class UpdateQuotationDto extends PartialType(
+  OmitType(CreateQuotationDto, ['opportunityId'] as const),
+) {}

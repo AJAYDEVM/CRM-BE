@@ -44,6 +44,59 @@ async function main() {
     },
   });
 
+  await prisma.employee.upsert({
+    where: { userId: admin.id },
+    update: {},
+    create: {
+      firstName: admin.firstName,
+      lastName: admin.lastName,
+      email: admin.email,
+      department: 'Administration',
+      designation: 'System Administrator',
+      userId: admin.id,
+    },
+  });
+
+  const salesEmployee = await prisma.employee.upsert({
+    where: { userId: salesManager.id },
+    update: {},
+    create: {
+      firstName: salesManager.firstName,
+      lastName: salesManager.lastName,
+      email: salesManager.email,
+      department: 'Sales',
+      designation: 'Sales Manager',
+      userId: salesManager.id,
+    },
+  });
+
+  await prisma.employee.upsert({
+    where: { userId: pm.id },
+    update: {},
+    create: {
+      firstName: pm.firstName,
+      lastName: pm.lastName,
+      email: pm.email,
+      department: 'Projects',
+      designation: 'Project Manager',
+      userId: pm.id,
+    },
+  });
+
+  await prisma.employee.upsert({
+    where: { id: 'seed-employee-ravi' },
+    update: {},
+    create: {
+      id: 'seed-employee-ravi',
+      firstName: 'Ravi',
+      lastName: 'Sharma',
+      email: 'ravi.sharma@tmci.com',
+      phone: '+91 98765 11111',
+      department: 'Field Operations',
+      designation: 'Site Engineer',
+    },
+  });
+
   const permissions = [
     { name: 'customers:read', module: 'customers', description: 'View customers' },
     { name: 'customers:write', module: 'customers', description: 'Manage customers' },
@@ -107,7 +160,7 @@ async function main() {
         category: 'TRAVEL',
         amount: 12000,
         date: new Date('2026-05-10'),
-        employeeId: salesManager.id,
+        employeeId: salesEmployee.id,
         referenceType: 'PRE_PROJECT',
         referenceId: preProject.id,
         preProjectId: preProject.id,
@@ -118,7 +171,7 @@ async function main() {
         category: 'HOTEL',
         amount: 5000,
         date: new Date('2026-05-10'),
-        employeeId: salesManager.id,
+        employeeId: salesEmployee.id,
         referenceType: 'PRE_PROJECT',
         referenceId: preProject.id,
         preProjectId: preProject.id,
@@ -129,7 +182,7 @@ async function main() {
         category: 'FOOD',
         amount: 2000,
         date: new Date('2026-05-11'),
-        employeeId: salesManager.id,
+        employeeId: salesEmployee.id,
         referenceType: 'PRE_PROJECT',
         referenceId: preProject.id,
         preProjectId: preProject.id,
@@ -160,6 +213,18 @@ async function main() {
       quantity: 1,
       location: 'Lab A - Shelf 3',
       status: 'AVAILABLE',
+    },
+  });
+
+  await prisma.companyProfile.upsert({
+    where: { id: 'default' },
+    update: {},
+    create: {
+      id: 'default',
+      companyName: 'TMCI Engineering Pvt Ltd',
+      gstNumber: '29AABCT1234A1Z5',
+      email: 'info@tmci.com',
+      phone: '+91 80 1234 5678',
     },
   });
 
