@@ -15,6 +15,7 @@ import { InvoicesModule } from './modules/invoices/invoices.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { FilesModule } from './modules/files/files.module';
 import { SettingsModule } from './modules/settings/settings.module';
+import { AuditLogsModule } from './modules/audit-logs/audit-logs.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { SettingsModule } from './modules/settings/settings.module';
     ReportsModule,
     FilesModule,
     SettingsModule,
+    AuditLogsModule,
   ],
 })
 export class AppModule {}

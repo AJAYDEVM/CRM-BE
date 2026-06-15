@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../common/database/prisma.service';
+import { AuditService } from '../../common/services/audit.service';
 import { UpdateCompanyProfileDto } from './dto/company-profile.dto';
+import { AuditAction } from '@prisma/client';
 
 const DEFAULT_PROFILE = {
   id: 'default',
@@ -12,7 +14,10 @@ const DEFAULT_PROFILE = {
 
 @Injectable()
 export class SettingsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private audit: AuditService,
+  ) {}
 
   async getCompanyProfile() {
     const profile = await this.prisma.companyProfile.findUnique({
@@ -24,8 +29,8 @@ export class SettingsService {
     return this.prisma.companyProfile.create({ data: DEFAULT_PROFILE });
   }
 
-  async updateCompanyProfile(dto: UpdateCompanyProfileDto) {
-    return this.prisma.companyProfile.upsert({
+  async updateCompanyProfile(dto: UpdateCompanyProfileDto, userId: string) {
+    const profile = await this.prisma.companyProfile.upsert({
       where: { id: 'default' },
       update: {
         companyName: dto.companyName.trim(),
@@ -41,5 +46,16 @@ export class SettingsService {
         phone: dto.phone.trim(),
       },
     });
+
+    await this.audit.log({
+      entityType: 'CompanyProfile',
+      entityId: profile.id,
+      action: AuditAction.UPDATE,
+      userId,
+      changes: dto as unknown as Record<string, unknown>,
+      metadata: { description: 'Company profile settings updated' },
+    });
+
+    return profile;
   }
 }

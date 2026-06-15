@@ -1,12 +1,13 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../common/database/prisma.service';
+import { AuditService } from '../../common/services/audit.service';
 import {
   CreateProductDto,
   CreateInventoryItemDto,
   UpdateInventoryItemDto,
   StockTransactionDto,
 } from './dto/inventory.dto';
-import { InventoryItemStatus, StockTransactionType } from '@prisma/client';
+import { AuditAction, InventoryItemStatus, StockTransactionType } from '@prisma/client';
 
 const itemInclude = {
   product: true,
@@ -20,10 +21,21 @@ const itemInclude = {
 
 @Injectable()
 export class InventoryService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private audit: AuditService,
+  ) {}
 
-  createProduct(dto: CreateProductDto) {
-    return this.prisma.product.create({ data: dto });
+  async createProduct(dto: CreateProductDto, userId: string) {
+    const product = await this.prisma.product.create({ data: dto });
+    await this.audit.log({
+      entityType: 'Product',
+      entityId: product.id,
+      action: AuditAction.CREATE,
+      userId,
+      changes: dto as unknown as Record<string, unknown>,
+    });
+    return product;
   }
 
   findAllProducts() {
@@ -33,14 +45,22 @@ export class InventoryService {
     });
   }
 
-  createItem(dto: CreateInventoryItemDto) {
+  async createItem(dto: CreateInventoryItemDto, userId: string) {
     if (dto.status === InventoryItemStatus.ASSIGNED) {
       throw new BadRequestException('Create the item as Available, then assign it to a project');
     }
-    return this.prisma.inventoryItem.create({
+    const item = await this.prisma.inventoryItem.create({
       data: dto,
       include: itemInclude,
     });
+    await this.audit.log({
+      entityType: 'InventoryItem',
+      entityId: item.id,
+      action: AuditAction.CREATE,
+      userId,
+      changes: dto as unknown as Record<string, unknown>,
+    });
+    return item;
   }
 
   private buildItemWhere(options: {
@@ -114,7 +134,7 @@ export class InventoryService {
     };
   }
 
-  async updateItem(id: string, dto: UpdateInventoryItemDto) {
+  async updateItem(id: string, dto: UpdateInventoryItemDto, userId: string) {
     const item = await this.prisma.inventoryItem.findUnique({ where: { id } });
     if (!item) throw new NotFoundException('Inventory item not found');
 
@@ -122,11 +142,21 @@ export class InventoryService {
       throw new BadRequestException('Use assign transaction to mark item as assigned');
     }
 
-    return this.prisma.inventoryItem.update({
+    const updated = await this.prisma.inventoryItem.update({
       where: { id },
       data: dto,
       include: itemInclude,
     });
+
+    await this.audit.log({
+      entityType: 'InventoryItem',
+      entityId: id,
+      action: AuditAction.UPDATE,
+      userId,
+      changes: dto as unknown as Record<string, unknown>,
+    });
+
+    return updated;
   }
 
   getDashboardStats() {
@@ -137,8 +167,11 @@ export class InventoryService {
     });
   }
 
-  async recordTransaction(dto: StockTransactionDto) {
-    const item = await this.prisma.inventoryItem.findUnique({ where: { id: dto.inventoryItemId } });
+  async recordTransaction(dto: StockTransactionDto, userId: string) {
+    const item = await this.prisma.inventoryItem.findUnique({
+      where: { id: dto.inventoryItemId },
+      include: { product: { select: { name: true } } },
+    });
     if (!item) throw new NotFoundException('Inventory item not found');
 
     if (dto.type === StockTransactionType.PROJECT_ASSIGNMENT) {
@@ -174,6 +207,24 @@ export class InventoryService {
       }
 
       return created;
+    });
+
+    const description =
+      dto.type === StockTransactionType.PROJECT_ASSIGNMENT
+        ? `Assigned ${item.product.name} (${item.serialNumber}) to project`
+        : `Returned ${item.product.name} (${item.serialNumber}) from project`;
+
+    await this.audit.log({
+      entityType: 'InventoryItem',
+      entityId: dto.inventoryItemId,
+      action: AuditAction.STATUS_CHANGE,
+      userId,
+      metadata: {
+        transactionId: transaction.id,
+        transactionType: dto.type,
+        projectId: dto.projectId,
+        description,
+      },
     });
 
     return transaction;

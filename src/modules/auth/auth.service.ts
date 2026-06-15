@@ -3,7 +3,9 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../common/database/prisma.service';
+import { AuditService } from '../../common/services/audit.service';
 import { ChangePasswordDto, LoginDto } from './dto/login.dto';
+import { AuditAction } from '@prisma/client';
 import { v4 as uuidv4 } from 'uuid';
 
 @Injectable()
@@ -12,6 +14,7 @@ export class AuthService {
     private prisma: PrismaService,
     private jwtService: JwtService,
     private config: ConfigService,
+    private audit: AuditService,
   ) {}
 
   async login(dto: LoginDto) {
@@ -87,6 +90,14 @@ export class AuthService {
     await this.prisma.refreshToken.updateMany({
       where: { userId, revokedAt: null },
       data: { revokedAt: new Date() },
+    });
+
+    await this.audit.log({
+      entityType: 'Auth',
+      entityId: userId,
+      action: AuditAction.UPDATE,
+      userId,
+      metadata: { description: 'Password changed' },
     });
 
     return { message: 'Password changed successfully' };

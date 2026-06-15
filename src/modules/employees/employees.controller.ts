@@ -16,7 +16,7 @@ export class EmployeesController {
   constructor(private service: EmployeesService) {}
 
   @Post()
-  @Roles(RoleName.ADMIN, RoleName.FINANCE)
+  @Roles(RoleName.ADMIN)
   @ApiOperation({ summary: 'Create employee' })
   create(@Body() dto: CreateEmployeeDto, @CurrentUser() user: AuthUser) {
     return this.service.create(dto, user.sub);
@@ -56,7 +56,7 @@ export class EmployeesController {
   }
 
   @Patch(':id')
-  @Roles(RoleName.ADMIN, RoleName.FINANCE)
+  @Roles(RoleName.ADMIN)
   update(@Param('id') id: string, @Body() dto: UpdateEmployeeDto, @CurrentUser() user: AuthUser) {
     return this.service.update(id, dto, user.sub);
   }

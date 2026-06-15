@@ -8,10 +8,11 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiConsumes, ApiTags } from '@nestjs/swagger';
-import { FileReferenceType } from '@prisma/client';
+import { AuditAction, FileReferenceType } from '@prisma/client';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { FileStorageService } from '../../common/services/file-storage.service';
+import { AuditService } from '../../common/services/audit.service';
 import { PrismaService } from '../../common/database/prisma.service';
 import { CurrentUser, AuthUser } from '../../common/decorators/current-user.decorator';
 import { IsEnum, IsOptional, IsUUID } from 'class-validator';
@@ -36,6 +37,7 @@ export class FilesController {
   constructor(
     private storage: FileStorageService,
     private prisma: PrismaService,
+    private audit: AuditService,
   ) {}
 
   @Post('upload')
@@ -53,7 +55,7 @@ export class FilesController {
       folder: dto.referenceType.toLowerCase(),
     });
 
-    return this.prisma.fileAsset.create({
+    const asset = await this.prisma.fileAsset.create({
       data: {
         fileName: stored.fileName,
         originalName: stored.originalName,
@@ -66,5 +68,20 @@ export class FilesController {
         uploadedById: user.sub,
       },
     });
+
+    await this.audit.log({
+      entityType: 'FileAsset',
+      entityId: asset.id,
+      action: AuditAction.CREATE,
+      userId: user.sub,
+      metadata: {
+        fileName: stored.originalName,
+        referenceType: dto.referenceType,
+        referenceId: dto.referenceId,
+        description: `Uploaded file "${stored.originalName}"`,
+      },
+    });
+
+    return asset;
   }
 }

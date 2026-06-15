@@ -10,6 +10,7 @@ import {
 } from './dto/inventory.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
+import { CurrentUser, AuthUser } from '../../common/decorators/current-user.decorator';
 
 @ApiTags('Inventory')
 @ApiBearerAuth()
@@ -19,8 +20,8 @@ export class InventoryController {
   constructor(private service: InventoryService) {}
 
   @Post('products')
-  createProduct(@Body() dto: CreateProductDto) {
-    return this.service.createProduct(dto);
+  createProduct(@Body() dto: CreateProductDto, @CurrentUser() user: AuthUser) {
+    return this.service.createProduct(dto, user.sub);
   }
 
   @Get('products')
@@ -29,8 +30,8 @@ export class InventoryController {
   }
 
   @Post('items')
-  createItem(@Body() dto: CreateInventoryItemDto) {
-    return this.service.createItem(dto);
+  createItem(@Body() dto: CreateInventoryItemDto, @CurrentUser() user: AuthUser) {
+    return this.service.createItem(dto, user.sub);
   }
 
   @Get('items')
@@ -56,8 +57,12 @@ export class InventoryController {
   }
 
   @Patch('items/:id')
-  updateItem(@Param('id') id: string, @Body() dto: UpdateInventoryItemDto) {
-    return this.service.updateItem(id, dto);
+  updateItem(
+    @Param('id') id: string,
+    @Body() dto: UpdateInventoryItemDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.service.updateItem(id, dto, user.sub);
   }
 
   @Get('dashboard')
@@ -66,7 +71,7 @@ export class InventoryController {
   }
 
   @Post('transactions')
-  recordTransaction(@Body() dto: StockTransactionDto) {
-    return this.service.recordTransaction(dto);
+  recordTransaction(@Body() dto: StockTransactionDto, @CurrentUser() user: AuthUser) {
+    return this.service.recordTransaction(dto, user.sub);
   }
 }

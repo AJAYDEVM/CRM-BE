@@ -1,6 +1,6 @@
 import { Controller, Get, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { PrismaService } from '../../common/database/prisma.service';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ReportsService } from './reports.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 
@@ -9,68 +9,29 @@ import { RolesGuard } from '../../common/guards/roles.guard';
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('reports')
 export class ReportsController {
-  constructor(private prisma: PrismaService) {}
+  constructor(private service: ReportsService) {}
 
   @Get('dashboard')
-  async dashboard() {
-    const [
-      totalOpportunities,
-      activeProjects,
-      pendingQuotations,
-      monthlyExpenses,
-      inventoryItems,
-      pendingInvoices,
-    ] = await Promise.all([
-      this.prisma.opportunity.count(),
-      this.prisma.project.count({ where: { status: 'ACTIVE' } }),
-      this.prisma.quotation.count({ where: { status: { in: ['DRAFT', 'SENT'] } } }),
-      this.prisma.expense.aggregate({
-        where: {
-          date: {
-            gte: new Date(new Date().getFullYear(), new Date().getMonth(), 1),
-          },
-        },
-        _sum: { amount: true },
-      }),
-      this.prisma.inventoryItem.aggregate({ _sum: { quantity: true } }),
-      this.prisma.invoice.count({ where: { status: { in: ['SENT', 'OVERDUE'] } } }),
-    ]);
+  @ApiOperation({ summary: 'Dashboard metrics and charts' })
+  dashboard() {
+    return this.service.getDashboard();
+  }
 
-    const projects = await this.prisma.project.findMany({
-      where: { status: 'ACTIVE' },
-      select: { name: true, budget: true, spent: true },
-    });
-
-    return {
-      stats: {
-        totalOpportunities,
-        activeProjects,
-        pendingQuotations,
-        monthlyExpenses: Number(monthlyExpenses._sum.amount ?? 0),
-        inventoryItems: inventoryItems._sum.quantity ?? 0,
-        pendingInvoices,
-      },
-      expenseVsBudget: projects.map((p) => ({
-        project: p.name,
-        budget: Number(p.budget),
-        spent: Number(p.spent),
-      })),
-    };
+  @Get('analytics')
+  @ApiOperation({ summary: 'Reports page charts' })
+  analytics() {
+    return this.service.getAnalytics();
   }
 
   @Get('revenue')
-  async revenue() {
-    const invoices = await this.prisma.invoice.findMany({
-      where: { status: 'PAID' },
-      select: { total: true, createdAt: true },
-    });
-    return invoices;
+  @ApiOperation({ summary: 'Paid invoice revenue' })
+  revenue() {
+    return this.service.getRevenue();
   }
 
   @Get('profitability')
-  async profitability() {
-    return this.prisma.project.findMany({
-      select: { name: true, budget: true, spent: true, status: true },
-    });
+  @ApiOperation({ summary: 'Project profitability' })
+  profitability() {
+    return this.service.getProfitability();
   }
 }

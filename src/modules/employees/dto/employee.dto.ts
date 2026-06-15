@@ -1,5 +1,14 @@
-import { IsBoolean, IsEmail, IsOptional, IsString, IsUUID } from 'class-validator';
+import {
+  IsBoolean,
+  IsEmail,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Matches,
+  MinLength,
+} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
+import { PASSWORD_REGEX, PASSWORD_VALIDATION_MESSAGE } from '../../../common/validators/password.validator';
 
 export class CreateEmployeeDto {
   @ApiProperty()
@@ -34,6 +43,15 @@ export class CreateEmployeeDto {
   @IsOptional()
   @IsUUID()
   userId?: string;
+
+  @ApiPropertyOptional({
+    description: 'Optional login password; requires email. Creates a system user linked to this employee.',
+  })
+  @IsOptional()
+  @IsString()
+  @MinLength(8)
+  @Matches(PASSWORD_REGEX, { message: PASSWORD_VALIDATION_MESSAGE })
+  password?: string;
 }
 
 export class UpdateEmployeeDto extends PartialType(CreateEmployeeDto) {
