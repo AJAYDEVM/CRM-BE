@@ -1,10 +1,10 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../common/database/prisma.service';
 import { AuditService } from '../../common/services/audit.service';
 import { paginatedResult, parsePagination } from '../../common/utils/pagination';
 import { EmployeesService } from '../employees/employees.service';
 import { CreateExpenseDto, UpdateExpenseDto, ApproveExpenseDto } from './dto/expense.dto';
-import { ApprovalStatus, AuditAction, ExpenseReferenceType } from '@prisma/client';
+import { ApprovalStatus, AuditAction, ExpenseCategory, ExpenseReferenceType, RoleName } from '@prisma/client';
 
 @Injectable()
 export class ExpensesService {
@@ -16,6 +16,7 @@ export class ExpensesService {
 
   async create(dto: CreateExpenseDto, userId: string, userRole: string) {
     const employeeId = await this.employees.resolveEmployeeId(dto.employeeId, userId, userRole);
+    await this.assertSalaryCategoryAllowed(dto.category, employeeId, userId, userRole);
     const data: Record<string, unknown> = {
       category: dto.category,
       amount: dto.amount,
@@ -63,6 +64,9 @@ export class ExpensesService {
       dto.employeeId !== undefined
         ? await this.employees.resolveEmployeeId(dto.employeeId, userId, userRole)
         : expense.employeeId;
+
+    const category = dto.category ?? expense.category;
+    await this.assertSalaryCategoryAllowed(category, employeeId, userId, userRole);
 
     const referenceType = dto.referenceType ?? expense.referenceType;
     const referenceId =
@@ -150,8 +154,13 @@ export class ExpensesService {
     search?: string;
     page?: number;
     limit?: number;
+    userRole?: string;
   }) {
     const where: Record<string, unknown> = {};
+
+    if (options.userRole !== RoleName.ADMIN) {
+      where.category = { not: ExpenseCategory.SALARY };
+    }
 
     if (options.referenceType) {
       where.referenceType = options.referenceType;
@@ -228,5 +237,18 @@ export class ExpensesService {
       userId: approverId,
     });
     return expense;
+  }
+
+  private async assertSalaryCategoryAllowed(
+    category: ExpenseCategory,
+    _employeeId: string,
+    _userId: string,
+    userRole: string,
+  ) {
+    if (category !== ExpenseCategory.SALARY) return;
+
+    if (userRole !== RoleName.ADMIN) {
+      throw new ForbiddenException('Only administrators can create salary expenses');
+    }
   }
 }

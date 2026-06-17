@@ -23,6 +23,10 @@ export class CreateInventoryItemDto {
   productId: string;
 
   @ApiProperty()
+  @IsUUID()
+  vendorId: string;
+
+  @ApiProperty()
   @IsString()
   serialNumber: string;
 

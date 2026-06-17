@@ -1,7 +1,9 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../common/database/prisma.service';
 import { AuditService } from '../../common/services/audit.service';
+import { SettingsService } from '../settings/settings.service';
 import { paginatedResult, parsePagination } from '../../common/utils/pagination';
+import { buildAddressSnapshot, getDefaultQuotationTerms } from '../../common/utils/document-snapshot.utils';
 import { CreateQuotationDto, AddQuotationItemsDto, UpdateQuotationDto, QuotationItemDto } from './dto/quotation.dto';
 import { AuditAction, QuotationStatus } from '@prisma/client';
 
@@ -10,6 +12,7 @@ export class QuotationsService {
   constructor(
     private prisma: PrismaService,
     private audit: AuditService,
+    private settings: SettingsService,
   ) {}
 
   private calcLine(item: QuotationItemDto) {
@@ -24,10 +27,25 @@ export class QuotationsService {
     return `QT-${year}-${String(count + 1).padStart(4, '0')}`;
   }
 
+  private async getCustomerOrThrow(customerId: string) {
+    const customer = await this.prisma.customer.findUnique({ where: { id: customerId } });
+    if (!customer) throw new NotFoundException('Customer not found');
+    return customer;
+  }
+
   async create(dto: CreateQuotationDto, userId: string) {
+    const customer = await this.getCustomerOrThrow(dto.customerId);
+    const addressSnapshot = buildAddressSnapshot(customer, dto);
+    const defaultTerms = dto.terms ?? (await getDefaultQuotationTerms(this.settings));
+
     const quotationNumber = await this.generateNumber();
     const items = dto.items.map((item) => ({
-      ...item,
+      name: item.name,
+      description: item.description,
+      hsnCode: item.hsnCode,
+      quantity: item.quantity,
+      unitPrice: item.unitPrice,
+      taxRate: item.taxRate ?? 18,
       lineTotal: this.calcLine(item),
     }));
     const subtotal = items.reduce((s, i) => s + i.quantity * i.unitPrice, 0);
@@ -49,6 +67,13 @@ export class QuotationsService {
         total,
         validUntil: dto.validUntil ? new Date(dto.validUntil) : undefined,
         notes: dto.notes,
+        reference: dto.reference,
+        placeOfSupply: dto.placeOfSupply,
+        subject: dto.subject,
+        customerGstin: addressSnapshot.customerGstin,
+        billToAddress: addressSnapshot.billToAddress,
+        shipToAddress: addressSnapshot.shipToAddress,
+        terms: defaultTerms,
         items: { create: items },
       },
       include: { items: true, customer: true },
@@ -139,6 +164,7 @@ export class QuotationsService {
           quotationId: id,
           name: item.name,
           description: item.description,
+          hsnCode: item.hsnCode,
           quantity: item.quantity,
           unitPrice: item.unitPrice,
           taxRate: item.taxRate ?? 18,
@@ -147,16 +173,27 @@ export class QuotationsService {
       });
     }
 
-    const headerUpdates: {
-      customerId?: string;
-      notes?: string | null;
-      validUntil?: Date;
-      discount?: number;
-    } = {};
+    const customerId = dto.customerId ?? quotation.customerId;
+    const customer = await this.getCustomerOrThrow(customerId);
+    const addressSnapshot = buildAddressSnapshot(customer, {
+      customerGstin: dto.customerGstin ?? quotation.customerGstin ?? undefined,
+      billToAddress: dto.billToAddress ?? quotation.billToAddress ?? undefined,
+      shipToAddress: dto.shipToAddress ?? quotation.shipToAddress ?? undefined,
+      sameAsBilling: dto.sameAsBilling,
+    });
+
+    const headerUpdates: Record<string, unknown> = {};
     if (dto.customerId) headerUpdates.customerId = dto.customerId;
     if (dto.notes !== undefined) headerUpdates.notes = dto.notes;
     if (dto.validUntil) headerUpdates.validUntil = new Date(dto.validUntil);
     if (dto.discount !== undefined) headerUpdates.discount = dto.discount;
+    if (dto.reference !== undefined) headerUpdates.reference = dto.reference;
+    if (dto.placeOfSupply !== undefined) headerUpdates.placeOfSupply = dto.placeOfSupply;
+    if (dto.subject !== undefined) headerUpdates.subject = dto.subject;
+    if (dto.terms !== undefined) headerUpdates.terms = dto.terms;
+    headerUpdates.customerGstin = addressSnapshot.customerGstin;
+    headerUpdates.billToAddress = addressSnapshot.billToAddress;
+    headerUpdates.shipToAddress = addressSnapshot.shipToAddress;
 
     return this.recalculateTotals(id, userId, headerUpdates);
   }
@@ -167,7 +204,12 @@ export class QuotationsService {
 
     const newItems = dto.items.map((item) => ({
       quotationId: id,
-      ...item,
+      name: item.name,
+      description: item.description,
+      hsnCode: item.hsnCode,
+      quantity: item.quantity,
+      unitPrice: item.unitPrice,
+      taxRate: item.taxRate ?? 18,
       lineTotal: this.calcLine(item),
     }));
 
@@ -212,16 +254,7 @@ export class QuotationsService {
     return updated;
   }
 
-  private async recalculateTotals(
-    id: string,
-    userId: string,
-    extraData: {
-      customerId?: string;
-      notes?: string | null;
-      validUntil?: Date;
-      discount?: number;
-    } = {},
-  ) {
+  private async recalculateTotals(id: string, userId: string, extraData: Record<string, unknown> = {}) {
     const items = await this.prisma.quotationItem.findMany({ where: { quotationId: id } });
     const subtotal = items.reduce((s, i) => s + Number(i.quantity) * Number(i.unitPrice), 0);
     const tax = items.reduce((s, i) => {
@@ -229,7 +262,7 @@ export class QuotationsService {
       return s + (st * Number(i.taxRate)) / 100;
     }, 0);
     const quotation = await this.prisma.quotation.findUnique({ where: { id } });
-    const discount = extraData.discount ?? Number(quotation?.discount ?? 0);
+    const discount = (extraData.discount as number | undefined) ?? Number(quotation?.discount ?? 0);
     const total = subtotal + tax - discount;
 
     const updated = await this.prisma.quotation.update({

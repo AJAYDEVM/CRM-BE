@@ -127,6 +127,32 @@ async function main() {
     },
   });
 
+  await prisma.vendor.upsert({
+    where: { id: 'seed-vendor-siemens' },
+    update: {},
+    create: {
+      id: 'seed-vendor-siemens',
+      companyName: 'Siemens India Pvt Ltd',
+      contactPerson: 'Vikram Singh',
+      email: 'vikram.singh@siemens.com',
+      phone: '+91 80 2222 3333',
+      address: 'Electronic City, Bengaluru',
+    },
+  });
+
+  await prisma.vendor.upsert({
+    where: { id: 'seed-vendor-abb' },
+    update: {},
+    create: {
+      id: 'seed-vendor-abb',
+      companyName: 'ABB India Ltd',
+      contactPerson: 'Meera Iyer',
+      email: 'meera.iyer@abb.com',
+      phone: '+91 80 4444 5555',
+      address: 'Whitefield, Bengaluru',
+    },
+  });
+
   const opportunity = await prisma.opportunity.upsert({
     where: { id: 'seed-opp-abc' },
     update: {},

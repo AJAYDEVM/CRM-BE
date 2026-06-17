@@ -11,6 +11,7 @@ import { AuditAction, InventoryItemStatus, StockTransactionType } from '@prisma/
 
 const itemInclude = {
   product: true,
+  vendor: { select: { id: true, companyName: true } },
   stockTransactions: {
     where: { type: StockTransactionType.PROJECT_ASSIGNMENT },
     orderBy: { createdAt: 'desc' as const },
@@ -49,6 +50,8 @@ export class InventoryService {
     if (dto.status === InventoryItemStatus.ASSIGNED) {
       throw new BadRequestException('Create the item as Available, then assign it to a project');
     }
+    const vendor = await this.prisma.vendor.findUnique({ where: { id: dto.vendorId } });
+    if (!vendor) throw new NotFoundException('Vendor not found');
     const item = await this.prisma.inventoryItem.create({
       data: dto,
       include: itemInclude,
@@ -89,6 +92,7 @@ export class InventoryService {
         { location: { contains: term, mode: 'insensitive' } },
         { product: { name: { contains: term, mode: 'insensitive' } } },
         { product: { category: { contains: term, mode: 'insensitive' } } },
+        { vendor: { companyName: { contains: term, mode: 'insensitive' } } },
         {
           stockTransactions: {
             some: {

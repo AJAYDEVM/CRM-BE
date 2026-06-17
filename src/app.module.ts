@@ -4,6 +4,7 @@ import { PrismaModule } from './common/database/prisma.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { CustomersModule } from './modules/customers/customers.module';
+import { VendorsModule } from './modules/vendors/vendors.module';
 import { OpportunitiesModule } from './modules/opportunities/opportunities.module';
 import { QuotationsModule } from './modules/quotations/quotations.module';
 import { PreProjectsModule } from './modules/pre-projects/pre-projects.module';
@@ -12,6 +13,11 @@ import { ExpensesModule } from './modules/expenses/expenses.module';
 import { EmployeesModule } from './modules/employees/employees.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
 import { InvoicesModule } from './modules/invoices/invoices.module';
+import { CreditNotesModule } from './modules/credit-notes/credit-notes.module';
+import { DeliveryChallansModule } from './modules/delivery-challans/delivery-challans.module';
+import { PackingListsModule } from './modules/packing-lists/packing-lists.module';
+import { ProformaInvoicesModule } from './modules/proforma-invoices/proforma-invoices.module';
+import { PurchaseOrdersModule } from './modules/purchase-orders/purchase-orders.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { FilesModule } from './modules/files/files.module';
 import { SettingsModule } from './modules/settings/settings.module';
@@ -24,6 +30,7 @@ import { AuditLogsModule } from './modules/audit-logs/audit-logs.module';
     AuthModule,
     UsersModule,
     CustomersModule,
+    VendorsModule,
     OpportunitiesModule,
     QuotationsModule,
     PreProjectsModule,
@@ -32,6 +39,11 @@ import { AuditLogsModule } from './modules/audit-logs/audit-logs.module';
     EmployeesModule,
     InventoryModule,
     InvoicesModule,
+    CreditNotesModule,
+    DeliveryChallansModule,
+    PackingListsModule,
+    ProformaInvoicesModule,
+    PurchaseOrdersModule,
     ReportsModule,
     FilesModule,
     SettingsModule,

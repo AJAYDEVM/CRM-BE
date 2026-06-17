@@ -1,15 +1,28 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../common/database/prisma.service';
 import { AuditService } from '../../common/services/audit.service';
-import { CreateInvoiceDto, RecordPaymentDto, UpdateInvoiceDto } from './dto/invoice.dto';
+import { SettingsService } from '../settings/settings.service';
+import { buildAddressSnapshot, getDefaultPaymentTerms } from '../../common/utils/document-snapshot.utils';
+import { CreateInvoiceDto, RecordPaymentDto, UpdateInvoiceDto, InvoiceItemDto } from './dto/invoice.dto';
 import { AuditAction, InvoiceStatus, PaymentStatus } from '@prisma/client';
+import { validateQuotationLink } from '../../common/utils/quotation-link.utils';
 
 @Injectable()
 export class InvoicesService {
   constructor(
     private prisma: PrismaService,
     private audit: AuditService,
+    private settings: SettingsService,
   ) {}
+
+  private calcLineAmount(item: InvoiceItemDto) {
+    return item.quantity * item.unitPrice;
+  }
+
+  private calcLineTax(item: InvoiceItemDto) {
+    const amount = this.calcLineAmount(item);
+    return (amount * (item.taxRate ?? 18)) / 100;
+  }
 
   private async generateNumber() {
     const count = await this.prisma.invoice.count();
@@ -17,28 +30,50 @@ export class InvoicesService {
     return `INV-${year}-${String(count + 1).padStart(4, '0')}`;
   }
 
+  private async getCustomerOrThrow(customerId: string) {
+    const customer = await this.prisma.customer.findUnique({ where: { id: customerId } });
+    if (!customer) throw new NotFoundException('Customer not found');
+    return customer;
+  }
+
   async create(dto: CreateInvoiceDto, userId: string) {
+    await validateQuotationLink(this.prisma, dto.quotationId, dto.customerId);
+    const customer = await this.getCustomerOrThrow(dto.customerId);
+    const addressSnapshot = buildAddressSnapshot(customer, dto);
+    const paymentTerms = dto.paymentTerms ?? (await getDefaultPaymentTerms(this.settings));
+
     const invoiceNumber = await this.generateNumber();
     const items = dto.items.map((i) => ({
-      ...i,
-      amount: i.quantity * i.unitPrice,
+      description: i.description,
+      hsnCode: i.hsnCode,
+      quantity: i.quantity,
+      unitPrice: i.unitPrice,
+      taxRate: i.taxRate ?? 18,
+      amount: this.calcLineAmount(i),
     }));
     const amount = items.reduce((s, i) => s + i.amount, 0);
-    const tax = amount * 0.18;
+    const tax = dto.items.reduce((s, i) => s + this.calcLineTax(i), 0);
     const total = amount + tax;
 
     const invoice = await this.prisma.invoice.create({
       data: {
         invoiceNumber,
+        quotationId: dto.quotationId,
         customerId: dto.customerId,
         projectId: dto.projectId,
         amount,
         tax,
         total,
         dueDate: new Date(dto.dueDate),
+        placeOfSupply: dto.placeOfSupply,
+        subject: dto.subject,
+        customerGstin: addressSnapshot.customerGstin,
+        billToAddress: addressSnapshot.billToAddress,
+        shipToAddress: addressSnapshot.shipToAddress,
+        paymentTerms,
         items: { create: items },
       },
-      include: { items: true, customer: true, project: true },
+      include: { items: true, customer: true, project: true, quotation: { select: { id: true, quotationNumber: true } } },
     });
 
     await this.audit.log({
@@ -143,7 +178,13 @@ export class InvoicesService {
   async findOne(id: string) {
     const invoice = await this.prisma.invoice.findUnique({
       where: { id },
-      include: { items: true, customer: true, project: true, payments: true },
+      include: {
+        items: true,
+        customer: true,
+        project: true,
+        payments: true,
+        quotation: { select: { id: true, quotationNumber: true } },
+      },
     });
     if (!invoice) throw new NotFoundException('Invoice not found');
     return invoice;
@@ -165,28 +206,45 @@ export class InvoicesService {
         data: dto.items.map((item) => ({
           invoiceId: id,
           description: item.description,
+          hsnCode: item.hsnCode,
           quantity: item.quantity,
           unitPrice: item.unitPrice,
-          amount: item.quantity * item.unitPrice,
+          taxRate: item.taxRate ?? 18,
+          amount: this.calcLineAmount(item),
         })),
       });
     }
 
+    const customerId = dto.customerId ?? invoice.customerId;
+    const customer = await this.getCustomerOrThrow(customerId);
+    const addressSnapshot = buildAddressSnapshot(customer, {
+      customerGstin: dto.customerGstin ?? invoice.customerGstin ?? undefined,
+      billToAddress: dto.billToAddress ?? invoice.billToAddress ?? undefined,
+      shipToAddress: dto.shipToAddress ?? invoice.shipToAddress ?? undefined,
+      sameAsBilling: dto.sameAsBilling,
+    });
+
     const fresh = await this.findOne(id);
     const amount = fresh.items.reduce((sum, item) => sum + Number(item.amount), 0);
-    const tax = amount * 0.18;
+    const tax = fresh.items.reduce((sum, item) => {
+      const lineAmount = Number(item.amount);
+      return sum + (lineAmount * Number(item.taxRate)) / 100;
+    }, 0);
     const total = amount + tax;
     const paidTotal = fresh.payments.reduce((sum, p) => sum + Number(p.amount), 0);
     const status = paidTotal >= total ? InvoiceStatus.PAID : fresh.status;
 
-    const headerUpdates: {
-      customerId?: string;
-      projectId?: string;
-      dueDate?: Date;
-    } = {};
+    const headerUpdates: Record<string, unknown> = {
+      customerGstin: addressSnapshot.customerGstin,
+      billToAddress: addressSnapshot.billToAddress,
+      shipToAddress: addressSnapshot.shipToAddress,
+    };
     if (dto.customerId) headerUpdates.customerId = dto.customerId;
     if (dto.projectId) headerUpdates.projectId = dto.projectId;
     if (dto.dueDate) headerUpdates.dueDate = new Date(dto.dueDate);
+    if (dto.placeOfSupply !== undefined) headerUpdates.placeOfSupply = dto.placeOfSupply;
+    if (dto.subject !== undefined) headerUpdates.subject = dto.subject;
+    if (dto.paymentTerms !== undefined) headerUpdates.paymentTerms = dto.paymentTerms;
 
     const updated = await this.prisma.invoice.update({
       where: { id },

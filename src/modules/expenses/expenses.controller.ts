@@ -32,6 +32,7 @@ export class ExpensesController {
     @Query('search') search?: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
+    @CurrentUser() user?: AuthUser,
   ) {
     return this.service.findAll({
       referenceType,
@@ -39,6 +40,7 @@ export class ExpensesController {
       search,
       page: page ? Number(page) : undefined,
       limit: limit ? Number(limit) : undefined,
+      userRole: user?.role,
     });
   }
 

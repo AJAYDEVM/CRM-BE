@@ -1,15 +1,20 @@
 import {
   IsArray,
+  IsBoolean,
   IsDateString,
   IsNumber,
   IsOptional,
   IsString,
   IsUUID,
+  Matches,
   Min,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional, PartialType, OmitType } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
+
+const GSTIN_REGEX = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
 
 export class QuotationItemDto {
   @ApiProperty()
@@ -20,6 +25,11 @@ export class QuotationItemDto {
   @IsOptional()
   @IsString()
   description?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  hsnCode?: string;
 
   @ApiProperty()
   @Type(() => Number)
@@ -59,6 +69,48 @@ export class CreateQuotationDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  reference?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  placeOfSupply?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  subject?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @ValidateIf((_, value) => typeof value === 'string' && value.trim() !== '')
+  @IsString()
+  @Matches(GSTIN_REGEX, { message: 'GSTIN must be a valid 15-character GST number' })
+  customerGstin?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  billToAddress?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  shipToAddress?: string;
+
+  @ApiPropertyOptional({ default: true })
+  @IsOptional()
+  @IsBoolean()
+  sameAsBilling?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  terms?: string;
 
   @ApiPropertyOptional({ default: 0 })
   @IsOptional()

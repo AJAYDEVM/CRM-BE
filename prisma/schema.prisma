@@ -60,6 +60,7 @@ enum ExpenseCategory {
   FOOD
   TRANSPORT
   MATERIAL
+  SALARY
   OTHER
 }
 
@@ -94,6 +95,36 @@ enum InvoiceStatus {
   SENT
   PAID
   OVERDUE
+}
+
+enum CreditNoteStatus {
+  DRAFT
+  SENT
+  APPLIED
+}
+
+enum DeliveryChallanStatus {
+  DRAFT
+  SENT
+  DISPATCHED
+}
+
+enum PackingListStatus {
+  DRAFT
+  SENT
+  PACKED
+}
+
+enum ProformaInvoiceStatus {
+  DRAFT
+  SENT
+  CONVERTED
+}
+
+enum PurchaseOrderStatus {
+  DRAFT
+  SENT
+  RECEIVED
 }
 
 enum PaymentStatus {
@@ -203,21 +234,47 @@ model RolePermission {
 // ─── CRM ─────────────────────────────────────────────────────────────────────
 
 model Customer {
-  id            String         @id @default(uuid())
-  companyName   String
-  contactPerson String
-  email         String
-  phone         String
-  address       String?
-  status        CustomerStatus @default(ACTIVE)
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  id              String         @id @default(uuid())
+  companyName     String
+  contactPerson   String
+  email           String
+  phone           String
+  address         String?
+  gstNumber       String?
+  shippingAddress String?
+  status          CustomerStatus @default(ACTIVE)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
 
   opportunities Opportunity[]
   quotations    Quotation[]
   preProjects   PreProject[]
   projects      Project[]
   invoices      Invoice[]
+  creditNotes        CreditNote[]
+  deliveryChallans DeliveryChallan[]
+  packingLists     PackingList[]
+  proformaInvoices ProformaInvoice[]
+
+  @@index([companyName])
+  @@index([status])
+  @@index([email])
+}
+
+model Vendor {
+  id            String         @id @default(uuid())
+  companyName   String
+  contactPerson String
+  email         String
+  phone         String
+  address       String?
+  gstNumber     String?
+  status        CustomerStatus @default(ACTIVE)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  inventoryItems InventoryItem[]
+  purchaseOrders   PurchaseOrder[]
 
   @@index([companyName])
   @@index([status])
@@ -259,12 +316,21 @@ model Quotation {
   status          QuotationStatus @default(DRAFT)
   validUntil      DateTime?
   notes           String?
+  reference       String?
+  placeOfSupply   String?
+  subject         String?
+  customerGstin   String?
+  billToAddress   String?
+  shipToAddress   String?
+  terms           String?         @db.Text
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
 
   customer    Customer        @relation(fields: [customerId], references: [id])
   opportunity Opportunity?    @relation(fields: [opportunityId], references: [id])
   items       QuotationItem[]
+  proformaInvoices ProformaInvoice[]
+  invoices         Invoice[]
 
   @@index([customerId])
   @@index([opportunityId])
@@ -277,6 +343,7 @@ model QuotationItem {
   quotationId String
   name        String
   description String?
+  hsnCode     String?
   quantity    Decimal @db.Decimal(10, 2)
   unitPrice   Decimal @db.Decimal(15, 2)
   taxRate     Decimal @db.Decimal(5, 2) @default(18)
@@ -334,6 +401,11 @@ model Project {
   members    ProjectMember[]
   expenses   Expense[]
   invoices   Invoice[]
+  creditNotes        CreditNote[]
+  deliveryChallans DeliveryChallan[]
+  packingLists     PackingList[]
+  proformaInvoices ProformaInvoice[]
+  purchaseOrders   PurchaseOrder[]
   stockTransactions StockTransaction[]
 
   @@index([customerId])
@@ -411,6 +483,7 @@ model Product {
 model InventoryItem {
   id           String              @id @default(uuid())
   productId    String
+  vendorId     String?
   serialNumber String              @unique
   quantity     Int                 @default(1)
   location     String
@@ -419,9 +492,11 @@ model InventoryItem {
   updatedAt    DateTime            @updatedAt
 
   product           Product            @relation(fields: [productId], references: [id])
+  vendor            Vendor?            @relation(fields: [vendorId], references: [id])
   stockTransactions StockTransaction[]
 
   @@index([productId])
+  @@index([vendorId])
   @@index([status])
   @@index([location])
 }
@@ -448,6 +523,7 @@ model StockTransaction {
 model Invoice {
   id            String        @id @default(uuid())
   invoiceNumber String        @unique
+  quotationId   String?
   customerId    String
   projectId     String
   amount        Decimal       @db.Decimal(15, 2)
@@ -455,16 +531,28 @@ model Invoice {
   total         Decimal       @db.Decimal(15, 2)
   status        InvoiceStatus @default(DRAFT)
   dueDate       DateTime
+  placeOfSupply String?
+  subject       String?
+  customerGstin String?
+  billToAddress String?
+  shipToAddress String?
+  paymentTerms  String?
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 
   customer Customer      @relation(fields: [customerId], references: [id])
   project  Project       @relation(fields: [projectId], references: [id])
+  quotation Quotation?   @relation(fields: [quotationId], references: [id])
   items    InvoiceItem[]
   payments Payment[]
+  creditNotes        CreditNote[]
+  deliveryChallans DeliveryChallan[]
+  packingLists     PackingList[]
+  proformaInvoice  ProformaInvoice?
 
   @@index([customerId])
   @@index([projectId])
+  @@index([quotationId])
   @@index([status])
   @@index([dueDate])
 }
@@ -473,8 +561,10 @@ model InvoiceItem {
   id          String  @id @default(uuid())
   invoiceId   String
   description String
+  hsnCode     String?
   quantity    Decimal @db.Decimal(10, 2)
   unitPrice   Decimal @db.Decimal(15, 2)
+  taxRate     Decimal @db.Decimal(5, 2) @default(18)
   amount      Decimal @db.Decimal(15, 2)
 
   invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
@@ -498,16 +588,265 @@ model Payment {
   @@index([paymentDate])
 }
 
+model CreditNote {
+  id               String           @id @default(uuid())
+  creditNoteNumber String           @unique
+  invoiceId        String?
+  customerId       String
+  projectId        String
+  amount           Decimal          @db.Decimal(15, 2)
+  tax              Decimal          @db.Decimal(15, 2) @default(0)
+  total            Decimal          @db.Decimal(15, 2)
+  status           CreditNoteStatus @default(DRAFT)
+  creditDate       DateTime
+  reason           String?
+  placeOfSupply    String?
+  subject          String?
+  customerGstin    String?
+  billToAddress    String?
+  shipToAddress    String?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  invoice  Invoice?         @relation(fields: [invoiceId], references: [id])
+  customer Customer         @relation(fields: [customerId], references: [id])
+  project  Project          @relation(fields: [projectId], references: [id])
+  items    CreditNoteItem[]
+
+  @@index([invoiceId])
+  @@index([customerId])
+  @@index([projectId])
+  @@index([status])
+  @@index([creditDate])
+}
+
+model CreditNoteItem {
+  id           String  @id @default(uuid())
+  creditNoteId String
+  description  String
+  hsnCode      String?
+  quantity     Decimal @db.Decimal(10, 2)
+  unitPrice    Decimal @db.Decimal(15, 2)
+  taxRate      Decimal @db.Decimal(5, 2) @default(18)
+  amount       Decimal @db.Decimal(15, 2)
+
+  creditNote CreditNote @relation(fields: [creditNoteId], references: [id], onDelete: Cascade)
+
+  @@index([creditNoteId])
+}
+
+model DeliveryChallan {
+  id            String                @id @default(uuid())
+  challanNumber String                @unique
+  invoiceId     String?
+  customerId    String
+  projectId     String
+  status        DeliveryChallanStatus @default(DRAFT)
+  challanDate   DateTime
+  vehicleNumber String?
+  driverName    String?
+  transportMode String?
+  notes         String?
+  placeOfSupply String?
+  subject       String?
+  customerGstin String?
+  billToAddress String?
+  shipToAddress String?
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+
+  invoice  Invoice?              @relation(fields: [invoiceId], references: [id])
+  customer Customer              @relation(fields: [customerId], references: [id])
+  project  Project               @relation(fields: [projectId], references: [id])
+  items    DeliveryChallanItem[]
+  packingLists PackingList[]
+
+  @@index([invoiceId])
+  @@index([customerId])
+  @@index([projectId])
+  @@index([status])
+  @@index([challanDate])
+}
+
+model DeliveryChallanItem {
+  id                String  @id @default(uuid())
+  deliveryChallanId String
+  description       String
+  hsnCode           String?
+  quantity          Decimal @db.Decimal(10, 2)
+  unit              String  @default("Nos")
+
+  deliveryChallan DeliveryChallan @relation(fields: [deliveryChallanId], references: [id], onDelete: Cascade)
+
+  @@index([deliveryChallanId])
+}
+
+model PackingList {
+  id                String            @id @default(uuid())
+  packingListNumber String            @unique
+  invoiceId         String?
+  deliveryChallanId String?
+  customerId        String
+  projectId         String
+  status            PackingListStatus @default(DRAFT)
+  packingDate       DateTime
+  totalPackages     Int?
+  grossWeightKg     Decimal?          @db.Decimal(10, 2)
+  netWeightKg       Decimal?          @db.Decimal(10, 2)
+  notes             String?
+  placeOfSupply     String?
+  subject           String?
+  customerGstin     String?
+  billToAddress     String?
+  shipToAddress     String?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  invoice         Invoice?          @relation(fields: [invoiceId], references: [id])
+  deliveryChallan DeliveryChallan?  @relation(fields: [deliveryChallanId], references: [id])
+  customer        Customer          @relation(fields: [customerId], references: [id])
+  project         Project           @relation(fields: [projectId], references: [id])
+  items           PackingListItem[]
+
+  @@index([invoiceId])
+  @@index([deliveryChallanId])
+  @@index([customerId])
+  @@index([projectId])
+  @@index([status])
+  @@index([packingDate])
+}
+
+model PackingListItem {
+  id            String  @id @default(uuid())
+  packingListId String
+  description   String
+  hsnCode       String?
+  quantity      Decimal @db.Decimal(10, 2)
+  unit          String  @default("Nos")
+  boxNo         String?
+
+  packingList PackingList @relation(fields: [packingListId], references: [id], onDelete: Cascade)
+
+  @@index([packingListId])
+}
+
+model ProformaInvoice {
+  id               String                @id @default(uuid())
+  proformaNumber   String                @unique
+  quotationId      String?
+  invoiceId        String?               @unique
+  customerId       String
+  projectId        String
+  status           ProformaInvoiceStatus @default(DRAFT)
+  proformaDate     DateTime
+  dueDate          DateTime
+  amount           Decimal               @db.Decimal(15, 2)
+  tax              Decimal               @db.Decimal(15, 2) @default(0)
+  total            Decimal               @db.Decimal(15, 2)
+  placeOfSupply    String?
+  subject          String?
+  customerGstin    String?
+  billToAddress    String?
+  shipToAddress    String?
+  paymentTerms     String?
+  notes            String?               @db.Text
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+
+  quotation Quotation?            @relation(fields: [quotationId], references: [id])
+  invoice   Invoice?              @relation(fields: [invoiceId], references: [id])
+  customer  Customer              @relation(fields: [customerId], references: [id])
+  project   Project               @relation(fields: [projectId], references: [id])
+  items     ProformaInvoiceItem[]
+
+  @@index([quotationId])
+  @@index([customerId])
+  @@index([projectId])
+  @@index([status])
+  @@index([proformaDate])
+  @@index([dueDate])
+}
+
+model ProformaInvoiceItem {
+  id                String  @id @default(uuid())
+  proformaInvoiceId String
+  description       String
+  hsnCode           String?
+  quantity          Decimal @db.Decimal(10, 2)
+  unitPrice         Decimal @db.Decimal(15, 2)
+  taxRate           Decimal @db.Decimal(5, 2) @default(18)
+  amount            Decimal @db.Decimal(15, 2)
+
+  proformaInvoice ProformaInvoice @relation(fields: [proformaInvoiceId], references: [id], onDelete: Cascade)
+
+  @@index([proformaInvoiceId])
+}
+
+model PurchaseOrder {
+  id                   String              @id @default(uuid())
+  poNumber             String              @unique
+  vendorId             String
+  projectId            String?
+  status               PurchaseOrderStatus @default(DRAFT)
+  orderDate            DateTime
+  expectedDeliveryDate DateTime?
+  amount               Decimal             @db.Decimal(15, 2)
+  tax                  Decimal             @db.Decimal(15, 2) @default(0)
+  total                Decimal             @db.Decimal(15, 2)
+  placeOfSupply        String?
+  subject              String?
+  vendorGstin          String?
+  vendorAddress        String?
+  shipToAddress        String?
+  paymentTerms         String?
+  notes                String?             @db.Text
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+
+  vendor  Vendor           @relation(fields: [vendorId], references: [id])
+  project Project?         @relation(fields: [projectId], references: [id])
+  items   PurchaseOrderItem[]
+
+  @@index([vendorId])
+  @@index([projectId])
+  @@index([status])
+  @@index([orderDate])
+}
+
+model PurchaseOrderItem {
+  id              String  @id @default(uuid())
+  purchaseOrderId String
+  description     String
+  hsnCode         String?
+  quantity        Decimal @db.Decimal(10, 2)
+  unitPrice       Decimal @db.Decimal(15, 2)
+  taxRate         Decimal @db.Decimal(5, 2) @default(18)
+  amount          Decimal @db.Decimal(15, 2)
+
+  purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+
+  @@index([purchaseOrderId])
+}
+
 // ─── Company Settings ────────────────────────────────────────────────────────
 
 model CompanyProfile {
-  id          String   @id @default("default")
-  companyName String
-  gstNumber   String?
-  email       String
-  phone       String
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id                    String   @id @default("default")
+  companyName           String
+  cin                   String?
+  address               String?  @db.Text
+  gstNumber             String?
+  email                 String
+  phone                 String
+  bankName              String?
+  bankAccountNumber     String?
+  bankBranch            String?
+  bankIfsc              String?
+  defaultQuotationTerms String?  @db.Text
+  defaultPaymentTerms   String?
+  logoFileName          String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 }
 
 // ─── Files & Audit ───────────────────────────────────────────────────────────

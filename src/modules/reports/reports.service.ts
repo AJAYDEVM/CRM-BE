@@ -18,6 +18,7 @@ const EXPENSE_CATEGORY_LABELS: Record<ExpenseCategory, string> = {
   FOOD: 'Food',
   TRANSPORT: 'Transport',
   MATERIAL: 'Material',
+  SALARY: 'Salary',
   OTHER: 'Other',
 };
 
